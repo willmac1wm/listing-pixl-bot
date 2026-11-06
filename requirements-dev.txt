@@ -1,0 +1,3 @@
+# Listing Pixl SMS bot — dev/test-only extras.
+pytest>=8.0
+httpx>=0.27

@@ -221,6 +221,39 @@ def test_package_detail_question(client, fake_telnyx):
     assert any("Luxury" in r and "$549" in r for r in replies)
 
 
+def test_whats_in_each_package_answers_with_contents(client, fake_telnyx):
+    # Regression: "whats in each package" used to loop back to the bare
+    # price-list question instead of explaining the packages.
+    text_bot(client, LEAD, "Hi")
+    text_bot(client, LEAD, "I'm an agent with a listing")
+    text_bot(client, LEAD, "130 County Rd")
+    text_bot(client, LEAD, "3200 3 bed 3 bath")
+    replies = fake_telnyx.sent_to(LEAD)
+    # Bare "3200" with no unit is still read as square footage, so the
+    # bot recommends Marketing ($389) for 3,200 sq ft.
+    assert any("Marketing" in r and "$389" in r for r in replies)
+
+    resp = text_bot(client, LEAD, "whats in each package")
+    assert resp.status_code == 200
+    answer = fake_telnyx.sent_to(LEAD)[-1]
+    assert "25-30 HDR photos" in answer  # Essential contents
+    assert "Matterport" in answer  # Signature contents
+    assert "drone" in answer.lower()
+    # And it resumes the package question instead of dropping the thread.
+    assert "leaning toward" in answer
+
+
+def test_whats_in_each_package_repeat_ask_still_answers(client, fake_telnyx):
+    text_bot(client, LEAD, "Hi")
+    text_bot(client, LEAD, "I'm an agent with a listing")
+    text_bot(client, LEAD, "130 County Rd")
+    text_bot(client, LEAD, "3200 3 bed 3 bath")
+    text_bot(client, LEAD, "whats in each")
+    text_bot(client, LEAD, "whats in each package")
+    replies = fake_telnyx.sent_to(LEAD)
+    assert any("Matterport" in r for r in replies[-2:])
+
+
 # --- Signature verification (valid -> 200, tampered -> 401) ---
 
 

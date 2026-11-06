@@ -249,6 +249,19 @@ def parse_details(text: str) -> dict:
             out["sqft"] = int(sqft.group(1).replace(",", ""))
         except ValueError:
             pass
+    if "sqft" not in out:
+        # Bare number with no unit, e.g. "3200 3 bed 3 bath": the only
+        # plausible square footage is a number >= 500 that isn't the
+        # bed/bath count. Without this the bot never recommends a package.
+        used = {out.get("beds"), out.get("baths")}
+        for raw in re.findall(r"\b([\d,]{3,})\b", lowered):
+            try:
+                value = int(raw.replace(",", ""))
+            except ValueError:
+                continue
+            if value >= 500 and value not in used:
+                out["sqft"] = value
+                break
     return out
 
 
@@ -302,7 +315,10 @@ def detect_date_promise_request(text: str) -> bool:
 def format_lead_summary(convo: dict, note: str | None = None) -> str:
     parts = ["Listing Pixl lead:"]
     name = convo.get("name") or "Name not given"
-    parts.append(f"{name} {convo.get('phone', '')}")
+    if convo.get("channel") == "web":
+        parts.append(f"{name} (web chat)")
+    else:
+        parts.append(f"{name} {convo.get('phone', '')}")
     if convo.get("address"):
         parts.append(f"Address: {convo['address']}")
     if convo.get("property_type") == "vacation_rental":
@@ -422,6 +438,21 @@ def handle_inbound_message(
         pkg = detect_package(text)
         answer = pricing.package_detail(pkg) if pkg else pricing.pricing_summary()
         return answer + " " + resume_question()
+
+    # "What's in each package?" / "compare packages" — the bot used to fall
+    # through to re-asking the package question, because none of the intents
+    # above matched ("in each" is not "include", and no single package name
+    # is mentioned). Answer with the full contents, then resume.
+    if _contains_any(lowered, ["whats in each", "what's in each",
+                                "what is in each", "in each package",
+                                "each package include", "what does each",
+                                "compare packages", "difference between",
+                                "whats included in each",
+                                "what's included in each",
+                                "what do the packages include",
+                                "breakdown of the packages",
+                                "what comes with each"]):
+        return pricing.pricing_summary() + " " + resume_question()
 
     if detect_package(text) and convo.get("state") in (STATE_NEW, STATE_LEAD_COMPLETE):
         return pricing.package_detail(detect_package(text)) + " " + resume_question()
